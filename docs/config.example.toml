@@ -1,0 +1,47 @@
+# All operational knobs below have defaults; retain only the fields needed by your deployment.
+
+[collector]
+# max_concurrency = 4
+# body_limit_bytes = 8388608
+# max_samples_per_target = 25000
+# max_labels_per_sample = 32
+# max_label_value_bytes = 1024
+# max_resolved_ips = 16
+# query_series_limit = 1000
+# query_sample_limit = 10000
+
+[[tasks]]
+system = "${context.system}"
+module = "api"
+# job defaults to module.
+# job = "api"
+# honor_labels = true
+# honor_timestamps = true
+labels = { cluster = "${context.cluster}" }
+
+[tasks.http]
+# timeout = "10s"
+# retries = 0
+# headers = { X-Scope-OrgID = "tenant-a" }
+# basic_auth = { username = "metrics", password = "not-a-secret-file" }
+# bearer_token_file = "/run/secrets/metrics-token"
+# verify_tls = true
+# allow_missing_content_type = false
+
+[[tasks.metrics]]
+name = "http_requests_total"
+type = "counter"
+# required defaults to true.
+
+[[tasks.metrics]]
+name = "http_request_duration_seconds"
+type = "histogram"
+
+[[tasks.targets]]
+url = "https://api.example.test/metrics"
+labels = { role = "primary", peer = "${target.resolved_ip}" }
+
+[[tasks.targets]]
+url = "https://api-backup.example.test/metrics"
+labels = { role = "backup", dns_name = "${target.dns_name}" }
+# allow_missing_content_type = true

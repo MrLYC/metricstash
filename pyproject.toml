@@ -1,7 +1,7 @@
 [project]
 name = "metricstash"
 version = "0.1.0"
-description = "Add your description here"
+description = "One-shot Prometheus/OpenMetrics text collection into SQLite"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
