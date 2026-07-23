@@ -58,21 +58,33 @@ class Database:
         *,
         allow_migrate: bool = False,
         writer_lock: bool = False,
+        create: bool = True,
         busy_timeout_ms: int = 5_000,
     ) -> "Database":
         """Open a database, initializing a new schema and checking old schemas."""
         path = Path(path)
+        if not create and not path.exists():
+            raise FileNotFoundError(f"SQLite database does not exist: {path}")
+        if not create and path.stat().st_size == 0:
+            raise FileNotFoundError(f"SQLite database is not initialized: {path}")
         lock: FileLock | None = None
         if writer_lock:
             lock = FileLock(path.with_name(f"{path.name}.lock"))
             lock.acquire()
         connection: sqlite3.Connection | None = None
         try:
-            connection = sqlite3.connect(path, isolation_level=None)
+            read_only = not create and not writer_lock and not allow_migrate
+            if read_only:
+                connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, isolation_level=None)
+            else:
+                connection = sqlite3.connect(path, isolation_level=None)
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA foreign_keys = ON")
-            connection.execute("PRAGMA journal_mode = WAL")
+            if not read_only:
+                connection.execute("PRAGMA journal_mode = WAL")
             connection.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
+            if not create and not _has_metricstash_schema(connection):
+                raise FileNotFoundError(f"SQLite database is not initialized: {path}")
             migrate_schema(connection, allow_upgrade=allow_migrate)
         except BaseException:
             if connection is not None:
@@ -321,3 +333,12 @@ def _truncate_error(value: str | None, limit: int = 1024) -> str | None:
     if value is None:
         return None
     return value[:limit]
+
+
+def _has_metricstash_schema(connection: sqlite3.Connection) -> bool:
+    return (
+        connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        ).fetchone()
+        is not None
+    )

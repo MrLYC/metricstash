@@ -95,3 +95,16 @@ def test_existing_old_schema_requires_explicit_migration(tmp_path) -> None:
         assert db.schema_version == 1
     finally:
         db.close()
+
+
+def test_read_only_open_does_not_create_a_missing_database(tmp_path) -> None:
+    with pytest.raises(FileNotFoundError):
+        Database.open(tmp_path / "missing.db", create=False)
+
+
+def test_read_only_open_does_not_initialize_an_empty_existing_file(tmp_path) -> None:
+    path = tmp_path / "empty.db"
+    path.touch()
+
+    with pytest.raises(FileNotFoundError, match="not initialized"):
+        Database.open(path, create=False)
