@@ -113,3 +113,28 @@ url = "https://api.example.test/metrics"
 
     with pytest.raises(ConfigError, match="timeout"):
         load_config(path, {})
+
+
+def test_basic_auth_and_bearer_token_are_mutually_exclusive(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        """
+[[tasks]]
+system = "prod"
+module = "api"
+
+[tasks.http]
+basic_auth = { username = "user", password = "pass" }
+bearer_token_file = "token"
+
+[[tasks.metrics]]
+name = "requests_total"
+type = "counter"
+
+[[tasks.targets]]
+url = "https://api.example.test/metrics"
+""",
+    )
+
+    with pytest.raises(ConfigError, match="both basic_auth and bearer_token_file"):
+        load_config(path, {})

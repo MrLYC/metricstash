@@ -247,6 +247,8 @@ def _parse_http(
         token_file = Path(token_value)
         if not token_file.is_absolute():
             token_file = config_dir / token_file
+    if basic_auth is not None and token_file is not None:
+        raise ConfigError("tasks.http cannot configure both basic_auth and bearer_token_file")
     return HttpConfig(
         timeout_seconds=timeout_seconds,
         retries=retries,
