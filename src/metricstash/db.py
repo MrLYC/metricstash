@@ -192,6 +192,119 @@ class Database:
             return None
         return (row["value"], row["value_repr"], int(row["scrape_id"]))
 
+    def create_run(
+        self,
+        context: Mapping[str, str],
+        *,
+        started_at_ms: int | None = None,
+        tool_version: str = "0.1.0",
+    ) -> int:
+        if started_at_ms is None:
+            started_at_ms = int(time.time() * 1000)
+        cursor = self.connection.execute(
+            "INSERT INTO runs(started_at_ms, context_json, tool_version) VALUES (?, ?, ?)",
+            (
+                started_at_ms,
+                json.dumps(dict(context), ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+                tool_version,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+    def finish_run(self, run_id: int, status: str, *, finished_at_ms: int | None = None) -> None:
+        if finished_at_ms is None:
+            finished_at_ms = int(time.time() * 1000)
+        self.connection.execute(
+            "UPDATE runs SET status = ?, finished_at_ms = ? WHERE id = ?",
+            (status, finished_at_ms, run_id),
+        )
+
+    def create_scrape(
+        self,
+        run_id: int,
+        *,
+        system: str,
+        module: str,
+        logical_url: str,
+        resolved_ip: str,
+        instance: str,
+        started_at_ms: int | None = None,
+        status: str = "running",
+    ) -> int:
+        if started_at_ms is None:
+            started_at_ms = int(time.time() * 1000)
+        cursor = self.connection.execute(
+            """
+            INSERT INTO scrapes(
+                run_id, system, module, logical_url, resolved_ip, instance, started_at_ms, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (run_id, system, module, logical_url, resolved_ip, instance, started_at_ms, status),
+        )
+        return int(cursor.lastrowid)
+
+    def finish_scrape(
+        self,
+        scrape_id: int,
+        *,
+        status: str,
+        attempts: int,
+        sample_count: int,
+        http_status: int | None = None,
+        error: str | None = None,
+        finished_at_ms: int | None = None,
+    ) -> None:
+        if finished_at_ms is None:
+            finished_at_ms = int(time.time() * 1000)
+        self.connection.execute(
+            """
+            UPDATE scrapes
+            SET status = ?, attempts = ?, sample_count = ?, http_status = ?, error = ?, finished_at_ms = ?
+            WHERE id = ?
+            """,
+            (status, attempts, sample_count, http_status, _truncate_error(error), finished_at_ms, scrape_id),
+        )
+
+    def upsert_metadata(
+        self,
+        *,
+        system: str,
+        module: str,
+        family_name: str,
+        metric_type: str,
+        help_text: str | None,
+        unit: str | None,
+        updated_at_ms: int | None = None,
+    ) -> None:
+        if updated_at_ms is None:
+            updated_at_ms = int(time.time() * 1000)
+        self.connection.execute(
+            """
+            INSERT INTO metric_metadata(
+                system, module, family_name, metric_type, help, unit, updated_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(system, module, family_name) DO UPDATE SET
+                metric_type = excluded.metric_type,
+                help = excluded.help,
+                unit = excluded.unit,
+                updated_at_ms = excluded.updated_at_ms
+            """,
+            (system, module, family_name, metric_type, help_text, unit, updated_at_ms),
+        )
+
+    def checkpoint(self) -> None:
+        self.connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
+
+    def prune_samples_before(self, cutoff_ms: int) -> int:
+        cursor = self.connection.execute("DELETE FROM samples WHERE sample_timestamp_ms < ?", (cutoff_ms,))
+        self.connection.execute(
+            "DELETE FROM series WHERE id NOT IN (SELECT DISTINCT series_id FROM samples)"
+        )
+        return int(cursor.rowcount)
+
+    def vacuum(self) -> None:
+        self.connection.execute("VACUUM")
+
 
 
 def _validate_sample_value(value: float | None, value_repr: str | None) -> None:
@@ -202,3 +315,9 @@ def _validate_sample_value(value: float | None, value_repr: str | None) -> None:
             raise ValueError("value must be a finite number")
     elif value_repr not in {"NaN", "+Inf", "-Inf"}:
         raise ValueError("value_repr must be NaN, +Inf, or -Inf")
+
+
+def _truncate_error(value: str | None, limit: int = 1024) -> str | None:
+    if value is None:
+        return None
+    return value[:limit]
