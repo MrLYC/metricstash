@@ -6,7 +6,7 @@ import pytest
 from aiohttp import web
 
 from metricstash.dns import PhysicalTarget
-from metricstash.http import BodyLimitError, ContentTypeError, MetricsHttpClient
+from metricstash.http import BodyLimitError, ContentTypeError, HttpStatusError, MetricsHttpClient
 from metricstash.models import MetricConfig, TargetConfig, TaskConfig
 
 
@@ -43,6 +43,21 @@ async def test_retries_only_retryable_statuses() -> None:
 
     assert result.attempts == 2
     assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_retryable_failure_reports_the_final_attempt_count() -> None:
+    async def always_503(request: web.Request) -> web.Response:
+        return web.Response(status=503, text="unavailable")
+
+    app = web.Application()
+    app.router.add_get("/always-503", always_503)
+    async with serve(app) as (base_url, _):
+        async with MetricsHttpClient(retries=2, timeout_seconds=1, retry_backoff_seconds=0) as client:
+            with pytest.raises(HttpStatusError) as raised:
+                await client.fetch(f"{base_url}/always-503")
+
+    assert raised.value.attempts == 3
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,8 @@ from metricstash.models import BasicAuthConfig, HttpConfig
 class HttpError(RuntimeError):
     """A metrics endpoint request could not produce an acceptable response."""
 
+    attempts: int | None = None
+
 
 class HttpStatusError(HttpError):
     def __init__(self, status: int, url: str) -> None:
@@ -128,18 +130,25 @@ class MetricsHttpClient:
                     if response.status in {408, 429} or response.status >= 500:
                         raise _RetryableResponse(response.status, request_url)
                     if response.status < 200 or response.status >= 300:
-                        raise HttpStatusError(response.status, request_url)
-                    _validate_content_type(
-                        response.headers.get("Content-Type"),
-                        allow_missing=settings.allow_missing_content_type,
-                        url=request_url,
-                    )
+                        raise _with_attempts(HttpStatusError(response.status, request_url), attempt)
+                    try:
+                        _validate_content_type(
+                            response.headers.get("Content-Type"),
+                            allow_missing=settings.allow_missing_content_type,
+                            url=request_url,
+                        )
+                    except HttpError as error:
+                        _with_attempts(error, attempt)
+                        raise
                     bytes_received = 0
                     async for chunk in response.content.iter_chunked(64 * 1024):
                         bytes_received += len(chunk)
                         if bytes_received > self.body_limit_bytes:
-                            raise BodyLimitError(
-                                f"metrics response exceeds {self.body_limit_bytes} decompressed bytes: {request_url}"
+                            raise _with_attempts(
+                                BodyLimitError(
+                                    f"metrics response exceeds {self.body_limit_bytes} decompressed bytes: {request_url}"
+                                ),
+                                attempt,
                             )
                         if on_chunk is not None:
                             consumed = on_chunk(chunk)
@@ -161,8 +170,9 @@ class MetricsHttpClient:
                 retry_error = error
             if attempt > settings.retries:
                 if isinstance(retry_error, HttpStatusError):
-                    raise retry_error
-                raise HttpError(f"network request failed after {attempt} attempts: {request_url}: {retry_error}") from retry_error
+                    raise _with_attempts(retry_error, attempt)
+                error = HttpError(f"network request failed after {attempt} attempts: {request_url}: {retry_error}")
+                raise _with_attempts(error, attempt) from retry_error
             await asyncio.sleep(self.retry_backoff_seconds * (2 ** (attempt - 1)))
         raise AssertionError("retry loop unexpectedly exhausted")  # pragma: no cover
 
@@ -269,3 +279,8 @@ def _is_permanent_tls_error(error: BaseException) -> bool:
             aiohttp.ServerFingerprintMismatch,
         ),
     )
+
+
+def _with_attempts(error: HttpError, attempts: int) -> HttpError:
+    error.attempts = attempts
+    return error
