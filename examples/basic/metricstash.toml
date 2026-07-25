@@ -1,0 +1,20 @@
+# 最小可运行示例配置：从本地静态端点采集一个 counter 和一个 histogram。
+# Minimal runnable example: collect one counter and one histogram from a local static endpoint.
+
+[[tasks]]
+system = "demo"
+module = "api"
+labels = { cluster = "local" }
+
+[[tasks.metrics]]
+name = "http_requests_total"
+type = "counter"
+
+[[tasks.metrics]]
+name = "http_request_duration_seconds"
+type = "histogram"
+
+[[tasks.targets]]
+# python -m http.server 9000 会把该目录下的 sample_metrics.txt 以 text/plain 暴露。
+# `python -m http.server 9000` serves sample_metrics.txt as text/plain from this directory.
+url = "http://127.0.0.1:9000/sample_metrics.txt"
