@@ -1,5 +1,7 @@
 # Metricstash Design
 
+[简体中文](2026-07-24-metricstash-design.zh-CN.md) | English
+
 **Status:** Approved design, 2026-07-24
 **Scope:** A one-shot, lightweight client for collecting selected Prometheus/OpenMetrics text metrics from multiple endpoints and storing them in SQLite.
 

@@ -1,5 +1,7 @@
 # Metricstash
 
+简体中文 | [English](README.en.md)
+
 Metricstash 是一个轻量、一次性执行的 Prometheus/OpenMetrics 文本指标采集客户端。它不启动后台服务：每次 `collect` 读取 TOML 配置、并发抓取多个目标、把允许的指标族写入 SQLite，然后退出。
 
 它适合 1 vCPU / 1 GiB 内存 / 500 MiB 可写磁盘这类受限环境中作为缺失监控系统时的补充采样工具，不替代 Prometheus、告警或长期时序数据库。
@@ -41,6 +43,10 @@ url = "https://api.example.test/metrics"
 ```
 
 只需指定任务的 `system`、`module`、每个指标的 `name`/`type`，以及目标 `url`。其余采集参数均有默认值。完整配置见 [`docs/config.example.toml`](docs/config.example.toml)。
+
+## 示例
+
+[`examples/`](examples/) 提供可完全离线运行的端到端示例，几分钟内跑通 `collect → query → inspect → prune`，并包含 cron/systemd 调度与 PyPI 发布指引。
 
 通过重复的 `--context KEY=VALUE` 提供动态任务上下文；模板使用 `${context.KEY}`。任务/目标标签还可使用 `${task.system}`、`${task.module}`、`${task.job}`、`${target.dns_name}` 与 `${target.resolved_ip}`。缺失的上下文变量会在发起 HTTP 请求前报错；不会读取环境变量。
 
